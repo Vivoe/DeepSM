@@ -21,7 +21,10 @@ def play_wav(data):
 
 
 def test_alignment(wav, times):
-    print(times)
+    """
+    Creates a 'ding' at each time specified.
+    """
+
     out = wav.copy()
 
     ts = np.arange(44100/2) / 44100
@@ -40,7 +43,7 @@ def test_alignment(wav, times):
 
         out[time:time+dinglen] += ding[:dinglen]
 
-    play_wav(out)
+    return out
 
 
 def pad_wav(first_frame, last_frame, wav, step=512):
@@ -65,7 +68,7 @@ def pad_wav(first_frame, last_frame, wav, step=512):
     return (n_front_pad // step, padded_wav)
 
 
-def gen_fft_features(wav, step=512, nfft=[1024,2048,4096], n_bands=80):
+def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80):
     features = []
     # Ignoring warnings here.
     # Will warn about issues calculating MEL filters when nfft = 1024.
@@ -78,7 +81,7 @@ def gen_fft_features(wav, step=512, nfft=[1024,2048,4096], n_bands=80):
             mel_features, mel_energy = fbank(
                 wav, nfft=fft_size,
                 samplerate=44100, nfilt=n_bands, winfunc=np.hamming,
-                lowfreq=27.5, highfreq=16000.0,
+                lowfreq=27.5, highfreq=8000.0,
                 winstep=512/44100)
 
             features.append(mel_features)

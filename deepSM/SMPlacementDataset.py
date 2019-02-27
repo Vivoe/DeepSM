@@ -104,23 +104,22 @@ def generate(song_name, base_path='.', chunk_size=200, context_size=7):
     # N_freqs = 80 (Number of mel coefs per frame)
     N_channels, N_frames, N_freqs = fft_features.shape
 
-    # Number of possible starting frames in the song.
-    # Need to exclude ending lag and unusable frames at the very ends.
-    sample_length = N_frames - chunk_size - context_size * 2
-
-
-    labels = np.zeros((len(diffs), N_frames))
+    step_pos_labels = np.zeros((len(diffs), N_frames))
+    step_type_labels = np.zeros((len(diffs), N_frames, 4))
     for i, diff in enumerate(diffs):
         # Adjusting for the new frames added on to the front.
         frames[diff] += front_pad_frames
 
         # Generating final frame-aligned labels for note event:
-        labels[i, frames[diff]] = 1
+        step_pos_labels[i, frames[diff]] = 1
 
-    # Testing alignment of frames.
-    # wavutils.test_alignment(padded_wav, frames[diff] * 512 / 44100)
 
-    return SMDataset(song_name, fft_features, labels, diffs, chunk_size,
+        for j, note in zip(frames[diff], notes[diff]):
+            step_type_labels[i, j, :] = np.array(list(map(int, note)))
+
+
+
+    return SMDataset(song_name, fft_features, step_pos_labels, step_type_labels, diffs, chunk_size,
             context_size)
 
 class SMDataset(Dataset):
@@ -131,17 +130,18 @@ class SMDataset(Dataset):
     Note: Frame context size is currently hard coded!
     """
 
-    def __init__(self, song_name, fft_features, labels, diffs, chunk_size,
+    def __init__(self, song_name, fft_features, step_pos_labels,
+            step_type_labels, diffs, chunk_size,
             context_size):
 
         # Dataset properties.
         self.song_name = song_name
         self.fft_features = fft_features
-        self.labels = labels
+        self.step_pos_labels = step_pos_labels
+        self.step_type_labels = step_type_labels
         self.diffs = diffs
 
-        if chunk_size:
-            self.chunk_size = int(chunk_size)
+        if chunk_size: self.chunk_size = int(chunk_size)
         else:
             self.chunk_size = 0
 
@@ -186,12 +186,14 @@ class SMDataset(Dataset):
             diff_mtx = np.zeros((self.chunk_size, 5))
             diff_mtx[:, diff_code] = 1
 
-            labels = self.labels[diff_idx, window_slice]
+            step_pos_labels = self.step_pos_labels[diff_idx, window_slice]
+            step_type_labels = self.step_type_labels[diff_idx, window_slice, :]
 
             res = {
                 'fft_features': fft_features.float(),
                 'diff': diff_mtx.astype(np.float32),
-                'labels': labels.astype(np.float32)
+                'step_pos_labels': step_pos_labels.astype(np.float32),
+                'step_type_labels': step_type_labels.astype(np.float32)
             }
 
         else:
@@ -205,8 +207,9 @@ class SMDataset(Dataset):
             # Get the slice of the features/labels for the chunk.
             fft_features = self.fft_features[:,chunk_slice, :]
 
-            # event_labels = self.labels[diff][chunk_slice]
-            event_labels = self.labels[diff_idx, frame_idx].reshape((1))
+            step_pos_labels = self.step_pos_labels[diff_idx, frame_idx].reshape((1))
+            step_type_labels = self.step_type_labels[diff_idx, frame_idx, :]
+
             
             diff_vec = np.zeros(5)
             diff_vec[diff_code] = 1
@@ -214,7 +217,8 @@ class SMDataset(Dataset):
             res = {
                 'fft_features': fft_features.astype(np.float32),
                 'diff': diff_vec.astype(np.float32),
-                'labels': event_labels.astype(np.float32)
+                'step_pos_labels': step_pos_labels.astype(np.float32),
+                'step_type_labels': step_type_labels.astype(np.float32)
             }
 
         return res
@@ -240,7 +244,8 @@ class SMDataset(Dataset):
             hf.attrs['context_size'] = self.context_size
 
             hf.create_dataset('fft_features', data=self.fft_features)
-            hf.create_dataset('labels', data=self.labels)
+            hf.create_dataset('step_pos_labels', data=self.step_pos_labels)
+            hf.create_dataset('step_type_labels', data=self.step_type_labels)
 
 
 def load(fname, dataset_name='base', chunk_size=200, base_path='datasets'):
@@ -252,7 +257,9 @@ def load(fname, dataset_name='base', chunk_size=200, base_path='datasets'):
         context_size = hf.attrs['context_size']
 
         fft_features = hf['fft_features'].value
-        labels = hf['labels'].value
+        step_pos_labels = hf['step_pos_labels'].value
+        step_type_labels = hf['step_type_labels'].value
 
-        return SMDataset(song_name, fft_features, labels, diffs, chunk_size,
+        return SMDataset(song_name, fft_features, step_pos_labels,
+                step_type_labels, diffs, chunk_size,
             context_size)

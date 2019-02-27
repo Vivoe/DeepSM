@@ -23,8 +23,6 @@ def filter_comments(line):
 
 
 
-
-
 class Notes:
     """
     Container class for notes.
@@ -51,16 +49,16 @@ class SMFile:
         associated with the song.
     """
 
-    def __init__(self, fname):
-        self.load_sm(fname)
-        self.load_wav()
+    def __init__(self, fname, base_path='.'):
+        self.load_sm(fname, base_path)
+        self.load_wav(base_path)
 
-    def load_sm(self, fname):
+    def load_sm(self, fname, base_path):
         self.fname = fname
 
-        sm_file_name = next(filter(lambda x: x.endswith('.sm'), os.listdir('data/'+fname)))
+        sm_file_name = next(filter(lambda x: x.endswith('.sm'), os.listdir(base_path + '/data/'+fname)))
 
-        with open('data/' + fname + '/' + sm_file_name) as f:
+        with open(base_path + '/data/' + fname + '/' + sm_file_name) as f:
             lines = list(map(
                 lambda x: filter_comments(x.strip()).replace('\ufeff', ''),
                 f.read().split(';')))
@@ -112,9 +110,9 @@ class SMFile:
 
         self.note_charts[diff_name] = note
 
-    def load_wav(self):
+    def load_wav(self, base_path='.'):
         # Assumes that the wav file is already mono.
-        filepath = 'data/' + self.fname + '/' + self.music
+        filepath = base_path + '/data/' + self.fname + '/' + self.music
         wav_filepath = filepath[:-3] + 'wav'
         rate, data = wavutils.read_wav(wav_filepath)
         self.rate = rate
