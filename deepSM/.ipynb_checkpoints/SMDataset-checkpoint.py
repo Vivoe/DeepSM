@@ -17,47 +17,27 @@ reload(wavutils)
 reload(utils)
 
 
-def get_dataset_from_file(dataset_name, song_names=None,
-        chunk_size=200, base_path='datasets', n_songs=None):
-
-    ds_path = f"{base_path}/{dataset_name}"
-
-    if song_names is None:
-        song_names = os.listdir(ds_path)
-
-    if n_songs is not None:
-        song_names = song_names[:n_songs]
-
+def get_dataset_from_file(song_names, base_path='.', data_folder='data'):
     smds = []
     for song_name in song_names:
-        smds.append(load(song_name, dataset_name=dataset_name,
-            chunk_size=chunk_size))
+        smds.append(load(song_name, base_path, data_folder))
 
     return ConcatDataset(smds)
 
-def get_dataset_from_raw(song_names, base_path='.', chunk_size=200):
+def get_dataset_from_raw(song_names, base_path='.'):
     smds = []
     for song_name in song_names:
-        smds.append(generate(song_name, base_path, chunk_size=chunk_size))
+        smds.append(generate(song_name, base_path))
     
     return ConcatDataset(smds)
 
-def save_generated_datasets(song_names, dataset_name, base_path='datasets',
-        data_path='.', overwrite=False):
-
-    ds_path = f"{base_path}/{dataset_name}"
-    print(ds_path)
-    if os.path.isdir(ds_path) and not overwrite:
-        raise ValueError("Dataset already exists.")
-    else:
-        os.mkdir(ds_path)
-
+def save_generated_datasets(song_names, base_path='.'):
     for song_name in song_names:
-        smd = generate(song_name, data_path)
-        smd.save(data_folder=ds_path)
+        smd = generate(song_name, base_path)
+        smd.save()
 
 
-def generate(song_name, base_path='.', chunk_size=200, context_size=7):
+def generate(song_name, base_path='.', chunk_size=100, context_size=7):
     """
     Generate an SMDataset from SM/wav files.
     """
@@ -74,7 +54,7 @@ def generate(song_name, base_path='.', chunk_size=200, context_size=7):
     notes = {} # Contains only a list of notes for each difficulty.
     times = {} # List of times per diff.
     frames = {}
-    # labels = {} # List of note aligned labels for note events. {0, 1} for now.
+#    labels = {} # List of note aligned labels for note events. {0, 1} for now.
 
 
     # Track first and last notes for wav padding.
@@ -104,22 +84,23 @@ def generate(song_name, base_path='.', chunk_size=200, context_size=7):
     # N_freqs = 80 (Number of mel coefs per frame)
     N_channels, N_frames, N_freqs = fft_features.shape
 
-    step_pos_labels = np.zeros((len(diffs), N_frames))
-    step_type_labels = np.zeros((len(diffs), N_frames, 4))
+    # Number of possible starting frames in the song.
+    # Need to exclude ending lag and unusable frames at the very ends.
+    sample_length = N_frames - chunk_size - context_size * 2
+
+
+    labels = np.zeros((len(diffs), N_frames))
     for i, diff in enumerate(diffs):
         # Adjusting for the new frames added on to the front.
         frames[diff] += front_pad_frames
 
         # Generating final frame-aligned labels for note event:
-        step_pos_labels[i, frames[diff]] = 1
+        labels[i, frames[diff]] = 1
 
+    # Testing alignment of frames.
+    # wavutils.test_alignment(padded_wav, frames[diff] * 512 / 44100)
 
-        for j, note in zip(frames[diff], notes[diff]):
-            step_type_labels[i, j, :] = np.array(list(map(int, note)))
-
-
-
-    return SMDataset(song_name, fft_features, step_pos_labels, step_type_labels, diffs, chunk_size,
+    return SMDataset(song_name, fft_features, labels, diffs, chunk_size,
             context_size)
 
 class SMDataset(Dataset):
@@ -130,22 +111,16 @@ class SMDataset(Dataset):
     Note: Frame context size is currently hard coded!
     """
 
-    def __init__(self, song_name, fft_features, step_pos_labels,
-            step_type_labels, diffs, chunk_size,
+    def __init__(self, song_name, fft_features, labels, diffs, chunk_size,
             context_size):
 
         # Dataset properties.
         self.song_name = song_name
         self.fft_features = fft_features
-        self.step_pos_labels = step_pos_labels
-        self.step_type_labels = step_type_labels
+        self.labels = labels
         self.diffs = diffs
-
-        if chunk_size: self.chunk_size = int(chunk_size)
-        else:
-            self.chunk_size = 0
-
-        self.context_size = int(context_size)
+        self.chunk_size = chunk_size
+        self.context_size = context_size
 
         # Genratable from dataset properties.
         self.N_frames = fft_features.shape[1]
@@ -167,59 +142,30 @@ class SMDataset(Dataset):
         diff_idx = idx // self.sample_length
         frame_idx = idx % self.sample_length
 
+        # First self.context_size frames are unusable.
+        frame_idx += self.context_size
+
         diff = self.diffs[diff_idx]
         diff_code = utils.difficulties[diff]
 
-        window_size = self.context_size * 2 + 1
+        # chuck_slice = slice(frame_idx, frame_idx + self.chunk_size)
+        chunk_slice = slice(frame_idx - self.context_size, frame_idx + self.context_size + 1)
 
-        if self.chunk_size:
-            fft_slice = slice(frame_idx, frame_idx + self.chunk_size + window_size-1)
-            window_slice = slice(frame_idx + self.context_size,
-                    frame_idx + self.context_size + self.chunk_size)
+        # Get the slice of the features/labels for the chunk.
+        fft_features = self.fft_features[:,chunk_slice, :]
 
-            feature_window = torch.from_numpy(self.fft_features[:,fft_slice,:])
+        # event_labels = self.labels[diff][chunk_slice]
+        # CNN version. currently scalar.
+        event_labels = self.labels[diff_idx, frame_idx].reshape((1))
+        
+        diff_vec = np.zeros(5)
+        diff_vec[diff_code] = 1
 
-            fft_features = feature_window.unfold(1, window_size, 1) 
-            fft_features = fft_features.transpose(2, 3).transpose(0, 1)
-
-
-            diff_mtx = np.zeros((self.chunk_size, 5))
-            diff_mtx[:, diff_code] = 1
-
-            step_pos_labels = self.step_pos_labels[diff_idx, window_slice]
-            step_type_labels = self.step_type_labels[diff_idx, window_slice, :]
-
-            res = {
-                'fft_features': fft_features.float(),
-                'diff': diff_mtx.astype(np.float32),
-                'step_pos_labels': step_pos_labels.astype(np.float32),
-                'step_type_labels': step_type_labels.astype(np.float32)
-            }
-
-        else:
-            # Convolutional version.
-
-            # First portion is unusable.
-            frame_idx += self.context_size
-            chunk_slice = slice(frame_idx - self.context_size,
-                    frame_idx + self.context_size + 1)
-
-            # Get the slice of the features/labels for the chunk.
-            fft_features = self.fft_features[:,chunk_slice, :]
-
-            step_pos_labels = self.step_pos_labels[diff_idx, frame_idx].reshape((1))
-            step_type_labels = self.step_type_labels[diff_idx, frame_idx, :]
-
-            
-            diff_vec = np.zeros(5)
-            diff_vec[diff_code] = 1
-
-            res = {
-                'fft_features': fft_features.astype(np.float32),
-                'diff': diff_vec.astype(np.float32),
-                'step_pos_labels': step_pos_labels.astype(np.float32),
-                'step_type_labels': step_type_labels.astype(np.float32)
-            }
+        res = {
+            'fft_features': fft_features.astype(np.float32),
+            'diff': diff_vec.astype(np.float32),
+            'labels': event_labels.astype(np.float32)
+        }
 
         return res
 
@@ -241,25 +187,24 @@ class SMDataset(Dataset):
 
             hf.attrs['song_name'] = self.song_name
             hf.attrs['diffs'] = np.array(self.diffs, dtype='S10')
+            hf.attrs['chunk_size'] = self.chunk_size
             hf.attrs['context_size'] = self.context_size
 
             hf.create_dataset('fft_features', data=self.fft_features)
-            hf.create_dataset('step_pos_labels', data=self.step_pos_labels)
-            hf.create_dataset('step_type_labels', data=self.step_type_labels)
+            hf.create_dataset('labels', data=self.labels)
 
 
-def load(fname, dataset_name='base', chunk_size=200, base_path='datasets'):
-    h5name = f'{base_path}/{dataset_name}/{fname}/{fname}.h5'
+def load(fname, base_path='.', data_folder='data'):
+    h5name = base_path + f'/{data_folder}/{fname}/{fname}.h5'
     with h5py.File(h5name, 'r') as hf:
 
         song_name = hf.attrs['song_name']
         diffs = list(map(lambda x: x.decode('ascii'), hf.attrs['diffs']))
+        chunk_size = hf.attrs['chunk_size']
         context_size = hf.attrs['context_size']
 
         fft_features = hf['fft_features'].value
-        step_pos_labels = hf['step_pos_labels'].value
-        step_type_labels = hf['step_type_labels'].value
+        labels = hf['labels'].value
 
-        return SMDataset(song_name, fft_features, step_pos_labels,
-                step_type_labels, diffs, chunk_size,
+        return SMDataset(song_name, fft_features, labels, diffs, chunk_size,
             context_size)
