@@ -50,9 +50,15 @@ class SMFile:
         associated with the song.
     """
 
-    def __init__(self, fname, raw_data_name, base_path=utils.BASE_PATH):
+    def __init__(self, fname, raw_data_name, base_path=utils.BASE_PATH,
+            raw_data_path=None):
+        print(fname)
         self.raw_data_name = raw_data_name
-        self.raw_data_path = f"{base_path}/data/{self.raw_data_name}/{fname}"
+        if raw_data_path is None:
+            self.raw_data_path = f"{base_path}/data/{self.raw_data_name}/{fname}"
+        else:
+            self.raw_data_path = raw_data_path
+
         self.load_sm(fname, base_path)
         self.load_wav(base_path)
 
@@ -66,7 +72,8 @@ class SMFile:
         sm_file_path = f"{self.raw_data_path}/{sm_file_name}"
         with open(sm_file_path) as f:
             lines = list(map(
-                lambda x: filter_comments(x.strip()).replace('\ufeff', ''),
+                # lambda x: filter_comments(x.strip()).replace('\ufeff', ''),
+                lambda x: filter_comments(x.strip()),
                 f.read().split(';')))
 
         # Process header information and parse notes.
@@ -89,7 +96,8 @@ class SMFile:
                 stopsline = line.split(':')[1]
                 self.stops = split_beat_value_list(stopsline)
 
-            elif line.startswith("#OFFSET:"):
+            # elif line.startswith("#OFFSET:"):
+            if 'OFFSET' in line:
                 self.offset = float(line.split(":")[1])
 
             elif line.startswith("#NOTES:"):

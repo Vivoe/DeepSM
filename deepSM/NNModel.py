@@ -5,12 +5,10 @@ from torch import optim
 import numpy as np
 import time
 
-from . import utils
-
-print("Reloaded")
+from deepSM import utils
 
 
-class PlacementModel(nn.Module):
+class NNModel(nn.Module):
     def __init__(self):
         self.use_cuda = False
         super().__init__()
@@ -47,11 +45,12 @@ class PlacementModel(nn.Module):
                 data, labels = self.prepare_data(batch_data)
 
                 optimizer.zero_grad()
-                outputs = super().__call__(*data)
-                loss = self.compute_loss(criterion, outputs, labels)
 
-                loss.backward()
-                optimizer.step()
+                with torch.autograd.detect_anomaly():
+                    outputs = super().__call__(*data)
+                    loss = self.compute_loss(criterion, outputs, labels)
+                    loss.backward()
+                    optimizer.step()
 
                 # Progress tracking.
                 if i % 25 == 0:

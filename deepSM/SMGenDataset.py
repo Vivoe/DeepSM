@@ -11,44 +11,79 @@ from importlib import reload
 
 __version = 'Gen-1-0'
 
+def load(song_name, dataset_name, base_path=utils.BASE_PATH, **kwargs):
+    fname = f'{base_path}/datasets/{dataset_name}/{song_name}/{song_name}.h5'
+
+    with h5py.File(fname, 'r') as hf:
+        assert song_name == hf.attrs['song_name']
+        # Convert back from fixed length strings.
+        diff_names = hf.attrs['diff_names'].astype(str)
+
+        diff_data = {}
+        for diff_name in diff_names:
+            hf_data = hf[diff_name]
+            d = {}
+
+            # Should include:
+            # fft_features
+            # beats_before
+            # beats_after
+            # step_type_labels
+            # Note: Cannot share fft_features between diffs due to different
+            # indices.
+            for key in hf_data.keys():
+                d[key] = hf_data[key].value
+
+            diff_data[diff_name] = d
+
+    return SMGenDataset(
+            song_name,
+            diff_names,
+            diff_data,
+            **kwargs)
+
+
+
+
 class SMGenDataset(datautils.Dataset):
 
     def __init__(
             self,
             song_name,
-            dataset_name,
+            diff_names,
+            diff_data,
             chunk_size=10,
             base_path=utils.BASE_PATH):
-
-        fname = f'{base_path}/datasets/{dataset_name}/{song_name}/{song_name}.h5'
+        """
+        diff_data = {
+            "diff_name": {
+                "fft_features": ...,
+                "beats_before": ...,
+                "beats_after": ...,
+                "step_type_labels?": ...
+            }
+        }
+        """
 
         self.song_name = song_name
+        self.diff_names = diff_names
+        self.diff_data = diff_data
         self.chunk_size = chunk_size
 
-        with h5py.File(fname, 'r') as hf:
-            assert self.song_name == hf.attrs['song_name']
-            # Convert back from fixed length strings.
-            self.diff_names = hf.attrs['diff_names'].astype(str)
+        k = list(diff_data.keys())[0]
+        self.use_labels = 'step_type_labels' in diff_data[k]
 
-            self.diff_data = {}
-            for diff_name in self.diff_names:
-                d = hf[diff_name]
-                self.diff_data[diff_name] = {}
+        # Calculate at which index each difficulty will start.
+        # Get length of each difficulty.
+        for diff in self.diff_data:
+            d = self.diff_data[diff]
+            if chunk_size == -1:
+                self.diff_data[diff]['diff_len'] = 1
+            else:
+                self.diff_data[diff]['diff_len'] = \
+                        d['fft_features'].shape[0] - chunk_size + 1
 
-                # Should include:
-                # fft_features
-                # beats_before
-                # beats_after
-                # step_type_labels
-                # Note: Cannot share fft_features between diffs due to different
-                # indices.
-                for key in d.keys():
-                    self.diff_data[diff_name][key] = d[key].value
-
-                self.diff_data[diff_name]['diff_len'] = \
-                        self.diff_data[diff_name]['fft_features'].shape[0]\
-                        - self.chunk_size + 1
-
+        # glorified cumsum
         self.diff_start_idx = [0]
         for i, diff_name in enumerate(self.diff_names):
             self.diff_start_idx.append(
@@ -63,7 +98,8 @@ class SMGenDataset(datautils.Dataset):
 
         l = 0
         for key in self.diff_data.keys():
-            l += diff_data[key]['fft_features'].shape[0] - self.chunk_size + 1
+            l += self.diff_data[key]['fft_features'].shape[0] \
+                    - self.chunk_size + 1
 
         return l
 
@@ -78,19 +114,30 @@ class SMGenDataset(datautils.Dataset):
 
         d = self.diff_data[diff_name]
 
-        window_slice = slice(frame_idx, frame_idx + self.chunk_size)
+        # Take everything.
+        if self.chunk_size == -1:
+            window_slice = slice(None, None)
+            diff = np.zeros((d['fft_features'].shape[0], 5))
+        else:
+            window_slice = slice(frame_idx, frame_idx + self.chunk_size)
+            diff = np.zeros((self.chunk_size, 5))
+
 
         fft_features = d['fft_features'][window_slice]
         beats_before = d['beats_before'][window_slice]
         beats_after = d['beats_after'][window_slice]
-        step_type_labels = d['step_type_labels'][window_slice]
-        diff = np.zeros((self.chunk_size, 5))
         diff[:, diff_code] = 1
+        if self.use_labels:
+            step_type_labels = d['step_type_labels'][window_slice]
 
-        return {
+        res = {
             'fft_features': fft_features,
             'beats_before': beats_before,
             'beats_after': beats_after,
-            'diff': diff,
-            'step_type_labels': step_type_labels
+            'diff': diff
         }
+
+        if self.use_labels:
+            res['step_type_labels'] = step_type_labels
+
+        return res

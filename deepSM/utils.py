@@ -24,11 +24,16 @@ def format_time(s):
 
     return "{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), secs)
 
-def convert_to_mono():
-    mp3s = glob.glob('data/*/*.mp3')
-    for mp3 in mp3s:
-        fname = mp3.split('.')[0]
-        subprocess.call(['ffmpeg', '-y', '-i', fname+'.mp3', '-ac', '1', fname+'.wav'])
+def convert_to_mono(dataset):
+    mp3s = glob.glob(f'data/{dataset}/*/*.mp3')
+    oggs = glob.glob(f'data/{dataset}/*/*.ogg')
+    audio_files = mp3s + oggs
+    print(audio_files)
+
+    for audiof in audio_files:
+        print(audiof)
+        fname = audiof[:-4]
+        subprocess.call(['ffmpeg', '-y', '-i', audiof, '-ac', '1', '-ar', '44100', fname+'.wav'])
 
 def flatmap(a):
     return list(itertools.chain.from_iterable(a))
@@ -71,7 +76,7 @@ def log_run(env):
 
     print(data)
 
-    with open('/home/ubuntu/dev/deepStep/models.log', 'a') as f:
+    with open('/home/lence/dev/deepStep/models.log', 'a') as f:
         json.dump(data, f)
         f.write('\n')
 

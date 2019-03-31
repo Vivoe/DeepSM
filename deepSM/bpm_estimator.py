@@ -4,6 +4,8 @@ from scipy import stats
 from statsmodels.tsa.stattools import acf
 import warnings
 
+from deepSM import generate_sm_file
+
 def cut_to_bpm_range(bpm, min_bpm=120):
     x = np.log2(bpm) - np.log2(min_bpm)
     return round(2**(x % 1 + np.log2(min_bpm)))
@@ -14,7 +16,7 @@ def est_bpm(frames, min_bpm=120):
 
     min_var = np.inf
     height = None
-    for i in np.linspace(1e-2, 0.5, 100):
+    for i in np.linspace(1e-2, 0.5, 20):
         peaks = signal.find_peaks(notes_acf, height=i)[0]
         if len(peaks) <=  2:
             continue
@@ -28,27 +30,53 @@ def est_bpm(frames, min_bpm=120):
     diffs = peaks[1:] - peaks[:-1]
     diff = np.mean(diffs)
 
-
     # Get BPM est between [min_bpm, min_bpm*2)
+    # Equal to the spacing between each "note"
     time_per_diff = diff * 512/44100
 
-    i = 0
-    while True:
-        secs_per_beat = time_per_diff * 2**i
-        beats_per_sec = 1 / secs_per_beat
-        bpm = beats_per_sec * 60
+    beats_per_sec = 1/time_per_diff
+    bpm = beats_per_sec * 60
 
-        if min_bpm <= bpm < 2 * min_bpm:
-            break
-        elif bpm >= 2 * min_bpm:
-            i += 1
-        elif bpm < min_bpm:
-            i -= 1
-        else:
-            print(bpm)
-            raise ValueError("Something went wrong in adjusting BPM.")
+    bpm = cut_to_bpm_range(bpm)
 
     return np.round(bpm).astype(int)
+
+def refined_bpm_estimate(preds, min_bpm=120):
+    """
+    Estimates BPM across all difficulties, and searches for the best one.
+    Preds should be a dict, with diff_names as key and frames as value.
+    """
+
+    bpms = []
+    for diff in preds.keys():
+        bpm = est_bpm(preds[diff])
+        bpms.append(bpm)
+
+    candidate_bpms = []
+    for bpm in bpms:
+        candidate_bpms.append(bpm-1)
+        candidate_bpms.append(bpm)
+        candidate_bpms.append(bpm+1)
+
+    candidate_bpms = list(set(candidate_bpms))
+    print("Candidate BPMs:", candidate_bpms)
+
+    bpm_scores = []
+    for bpm in candidate_bpms:
+        print("Processing", bpm)
+        score = 0
+        for diff in preds.keys():
+            offset, divnotes = \
+                    generate_sm_file.frames_to_measures(preds[diff], bpm)
+
+            score += sum(divnotes[0])
+
+        bpm_scores.append(score)
+
+    bpm_idx = np.argmin(bpm_scores)
+    bpm = candidate_bpms[bpm_idx]
+    print("BPM scores:", bpm_scores)
+    return bpm
 
 
 def true_bpm(sm, min_bpm=120, req_thresh=0.4):
@@ -58,7 +86,7 @@ def true_bpm(sm, min_bpm=120, req_thresh=0.4):
     """
 
     n_beats = len(list(sm.note_charts.values())[0].notes) * 4
-    bpms = sm.bpms
+    bpms = sm.bpms.copy()
 
     bpms.append((n_beats, None))
 
@@ -75,4 +103,5 @@ def true_bpm(sm, min_bpm=120, req_thresh=0.4):
     if bpm_dict[true_bpm] < req_thresh * n_beats:
         raise ValueError(f"Unable to get good estimate of BPM for song {sm.title}, probably non-static.")
 
+    true_bpm = cut_to_bpm_range(true_bpm)
     return true_bpm

@@ -1,5 +1,6 @@
 
 import os
+import shutil
 
 import numpy as np
 import torch
@@ -11,6 +12,7 @@ import deepSM.beat_time_converter as BTC
 from deepSM import wavutils
 from deepSM import StepPlacement
 from deepSM import SMDataset
+from deepSM import SMGenDataset
 
 import h5py
 
@@ -24,14 +26,16 @@ reload(SMDataset)
 
 def get_dataset_from_file(
         dataset_name,
+        dataset_type,
         song_names=None,
-        chunk_size=200,
         n_songs=None,
         base_path=utils.BASE_PATH,
         concat=True,
-        step_pos_labels=False):
+        step_pos_labels=False,
+        **kwargs):
 
     ds_path = f"{base_path}/datasets/{dataset_name}"
+    dataset_type = dataset_type.lower()
 
     if song_names is None:
         song_names = os.listdir(ds_path)
@@ -43,8 +47,16 @@ def get_dataset_from_file(
 
     # Can include context size here!
     for song_name in song_names:
-        smds.append(SMDataset.load(song_name, dataset_name=dataset_name,
-            chunk_size=chunk_size))
+        if dataset_type in 'generat':
+            smds.append(SMGenDataset.load(
+                song_name, dataset_name=dataset_name,
+                **kwargs))
+        elif dataset_type in 'placement':
+            smds.append(SMDataset.load(
+                song_name, dataset_name=dataset_name,
+                **kwargs))
+        else:
+            raise ValueError("Dataset type must be gen or placement.")
 
     if concat:
         res =  ConcatDataset(smds)
@@ -64,15 +76,48 @@ def get_dataset_from_file(
         return res
 
 def get_dataset_from_raw(
-        song_names,
+        raw_data_name,
         base_path=utils.BASE_PATH,
-        chunk_size=200):
+        chunk_size=100):
+
+    song_names = os.listdir(f"{base_path}/data/{raw_data_name}")
 
     smds = []
     for song_name in song_names:
-        smds.append(generate(song_name, base_path, chunk_size=chunk_size))
+        smds.append(generate(
+            song_name, raw_data_name, base_path, chunk_size=chunk_size))
 
     return ConcatDataset(smds)
+
+
+def train_test_split_dataset(
+        dataset_name,
+        test_split=0.25,
+        base_path=utils.BASE_PATH):
+
+    ds_path = f"{base_path}/datasets/{dataset_name}"
+
+    song_names = os.listdir(ds_path)
+    np.random.shuffle(song_names)
+
+    n_train = int(np.round(len(song_names) * (1 - test_split)))
+    train_songs = song_names[:n_train]
+    test_songs = song_names[n_train:]
+
+    train_path = f"{ds_path}_train"
+    test_path = f"{ds_path}_test"
+    if not os.path.isdir(train_path):
+        os.mkdir(train_path)
+    if not os.path.isdir(test_path):
+        os.mkdir(test_path)
+
+    for song in train_songs:
+        shutil.copytree(f"{ds_path}/{song}", f"{train_path}/{song}")
+
+    for song in test_songs:
+        shutil.copytree(f"{ds_path}/{song}", f"{test_path}/{song}")
+
+
 
 def save_generated_datasets(
         raw_data_name,
@@ -88,14 +133,13 @@ def save_generated_datasets(
     """
 
     if dataset_name is None:
-        dataset_name = f"{raw_data_name}_{SMDataset.__version__}"
+        dataset_name = f"{raw_data_name}_placement"
 
     raw_data_path = f"{base_path}/data/{raw_data_name}"
     ds_path = f"{base_path}/datasets/{dataset_name}"
 
     if song_names is None:
         song_names = os.listdir(raw_data_path)
-        print(song_names)
 
     if test_split is not None:
         song_names = song_names.copy()
@@ -120,7 +164,7 @@ def save_generated_datasets(
                 base_path,
                 None, overwrite, **kwargs)
 
-        return
+        return dataset_name
 
     if os.path.isdir(ds_path):
         if not overwrite:
@@ -131,6 +175,8 @@ def save_generated_datasets(
     for song_name in song_names:
         smd = generate(song_name, raw_data_name, base_path, **kwargs)
         smd.save(dataset_name=dataset_name)
+
+    return dataset_name
 
 
 def augment_dataset(
@@ -196,8 +242,10 @@ def generate(
         song_name,
         raw_data_name,
         base_path=utils.BASE_PATH,
-        chunk_size=200,
-        context_size=7):
+        chunk_size=100,
+        context_size=7,
+        drop_diffs=[],
+        log=False):
     """
     Generate an SMDataset from SM/wav files.
     Only creates datasets with no step predictions.
@@ -211,6 +259,8 @@ def generate(
     # Will want to mantain order.
     # List of strings, not ints.
     diffs = list(filter(lambda x: x != 'Edit', sm.note_charts.keys()))
+    if drop_diffs is not None:
+        diffs = list(filter(lambda x: x not in drop_diffs, diffs))
 
     notes = {} # Contains only a list of notes for each difficulty.
     times = {} # List of times per diff.
@@ -239,7 +289,7 @@ def generate(
     front_pad_frames, padded_wav = \
             wavutils.pad_wav(first_frame, last_frame, sm.wavdata)
 
-    fft_features = wavutils.gen_fft_features(padded_wav)
+    fft_features = wavutils.gen_fft_features(padded_wav, log=log)
 
     # N_channels = 3 (1024, 2048, 4096)
     # N_frames ~ song length * 44100 / 512
@@ -261,5 +311,5 @@ def generate(
 
 
     return SMDataset.SMDataset(
-            song_name, fft_features, step_pos_labels, step_type_labels,
-            diffs, chunk_size, context_size)
+            song_name, diffs, fft_features, step_pos_labels, step_type_labels,
+            chunk_size, context_size)

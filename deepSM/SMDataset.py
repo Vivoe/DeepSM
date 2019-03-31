@@ -19,6 +19,29 @@ reload(utils)
 
 __version__ = '2-0-0'
 
+def load(song_name, dataset_name, base_path=utils.BASE_PATH, **kwargs):
+
+    fname = f'{base_path}/datasets/{dataset_name}/{song_name}/{song_name}.h5'
+    with h5py.File(fname, 'r') as hf:
+
+        song_name = hf.attrs['song_name']
+        assert song_name == song_name
+
+        diffs = hf.attrs['diffs'].astype(str)
+        # diffs = list(map(lambda x: x.decode('ascii'), hf.attrs['diffs']))
+
+        fft_features = hf['fft_features'].value
+        step_pos_labels = hf['step_pos_labels'].value
+        step_type_labels = hf['step_type_labels'].value
+
+    return SMDataset(
+            song_name,
+            diffs,
+            fft_features,
+            step_pos_labels,
+            step_type_labels,
+            **kwargs)
+
 class SMDataset(Dataset):
     """
     Dataset loader for note placement network.
@@ -30,29 +53,32 @@ class SMDataset(Dataset):
         Use None for Conv models.
         Use -1 for prediction (Returns entire song as a single sequence.)
         Use N for RNNs of sequence length N.
+
+    Will ignore all labels if either set of labels is None.
     """
 
-    def __init__(self, song_name, fft_features, step_pos_labels,
-            step_type_labels, diffs, chunk_size, context_size,
-            step_predictions=None):
+    def __init__(
+            self,
+            song_name,
+            diffs,
+            fft_features,
+            step_pos_labels=None,
+            step_type_labels=None,
+            chunk_size=100,
+            context_size=7):
 
-        # Dataset properties.
         self.song_name = song_name
+        self.diffs = diffs
         self.fft_features = fft_features
         self.step_pos_labels = step_pos_labels
         self.step_type_labels = step_type_labels
-        self.diffs = diffs
 
-        # May be null.
-        if step_predictions is not None:
-            assert isinstance(step_predictions, np.ndarray)
-
-            # Apply sigmoid.
-            self.step_predictions = 1 / (1 + np.exp(-step_predictions))
+        if step_pos_labels is None or step_type_labels is None:
+            self.use_labels = False
         else:
-            self.step_predictions = None
+            self.use_labels = True
 
-        self.N_frames = fft_features.shape[1]
+        self.N_frames = self.fft_features.shape[1]
         self.context_size = int(context_size)
 
 
@@ -112,35 +138,26 @@ class SMDataset(Dataset):
         diff_mtx = np.zeros((self.chunk_size, 5))
         diff_mtx[:, diff_code] = 1
 
-        step_pos_labels = self.step_pos_labels[diff_idx, window_slice]
-        step_type_labels = self.step_type_labels[diff_idx, window_slice, :]
+        # Get appropriate labels.
+        if self.use_labels:
+            step_pos_labels = self.step_pos_labels[diff_idx, window_slice]
+            step_type_labels = self.step_type_labels[diff_idx, window_slice, :]
 
+        # Aggregate data into final dictionary.
         if self.conv:
             res = {
                 'fft_features': torch.squeeze(fft_features.float(), 0),
                 'diff': diff_mtx.astype(np.float32).reshape(-1),
-                'step_pos_labels': step_pos_labels.astype(np.float32)
-            }
-
-        elif self.step_predictions is not None:
-            step_predictions= \
-                    self.step_predictions[diff_idx, window_slice]\
-                        .reshape((-1, 1))
-
-            res = {
-                'fft_features': fft_features.float(),
-                'diff': diff_mtx.astype(np.float32),
-                'step_pos_labels': step_pos_labels.astype(np.float32),
-                'step_type_labels': step_type_labels.astype(np.float32),
-                'step_predictions': step_predictions.astype(np.float32)
             }
         else:
             res = {
                 'fft_features': fft_features.float(),
                 'diff': diff_mtx.astype(np.float32),
-                'step_pos_labels': step_pos_labels.astype(np.float32),
-                'step_type_labels': step_type_labels.astype(np.float32)
             }
+
+        if self.use_labels:
+            res['step_pos_labels'] = step_pos_labels.astype(np.float32)
+            res['step_type_labels'] = step_type_labels.astype(np.float32)
 
         return res
 
@@ -166,38 +183,4 @@ class SMDataset(Dataset):
             hf.create_dataset('fft_features', data=self.fft_features)
             hf.create_dataset('step_pos_labels', data=self.step_pos_labels)
             hf.create_dataset('step_type_labels', data=self.step_type_labels)
-
-            if self.step_predictions is not None:
-                hf.create_dataset('step_predictions',
-                        data=self.step_predictions)
-
-
-def load(
-        fname,
-        dataset_name,
-        chunk_size=200,
-        base_path=utils.BASE_PATH,
-        context_size=None):
-
-    h5name = f'{base_path}/datasets/{dataset_name}/{fname}/{fname}.h5'
-    with h5py.File(h5name, 'r') as hf:
-
-        song_name = hf.attrs['song_name']
-        diffs = list(map(lambda x: x.decode('ascii'), hf.attrs['diffs']))
-
-        if context_size is None:
-            context_size = hf.attrs['context_size']
-
-        fft_features = hf['fft_features'].value
-        step_pos_labels = hf['step_pos_labels'].value
-        step_type_labels = hf['step_type_labels'].value
-
-        if 'step_predictions' in hf:
-            step_predictions = hf['step_predictions'].value
-        else:
-            step_predictions = None
-
-        return SMDataset(song_name, fft_features, step_pos_labels,
-                step_type_labels, diffs, chunk_size, context_size,
-                step_predictions)
 

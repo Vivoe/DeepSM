@@ -8,6 +8,7 @@ import warnings
 def read_wav(fname):
     # Converts to [-1, 1] range.
     rate, data = wavfile.read(fname)
+    assert rate == 44100, "WHY ARE YOU NOT USING 44.1K"
     return rate, data / 32767
 
 def write_wav(fname, data, rate=44100):
@@ -68,7 +69,7 @@ def pad_wav(first_frame, last_frame, wav, step=512):
     return (n_front_pad // step, padded_wav)
 
 
-def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80):
+def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80, log=True):
     features = []
     # Ignoring warnings here.
     # Will warn about issues calculating MEL filters when nfft = 1024.
@@ -84,7 +85,10 @@ def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80):
                 lowfreq=27.5, highfreq=8000.0,
                 winstep=512/44100)
 
-            features.append(mel_features)
+            if log:
+                features.append(np.log10(mel_features + 1e-4))
+            else:
+                features.append(mel_features)
 
     # Reutnrs shape [Channels, Time, Frequency]
     # return np.log10(np.stack(features))
