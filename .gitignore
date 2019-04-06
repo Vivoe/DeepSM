@@ -1,0 +1,12 @@
+__pycache__
+data
+gen
+temp/*
+datasets
+models
+*.torch
+*.ipynb
+*.log
+notebooks
+Dockerfile
+datasets.old
