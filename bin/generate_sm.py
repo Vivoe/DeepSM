@@ -1,6 +1,7 @@
 import os
 import argparse
 import numpy as np
+import json
 
 import torch
 import torch.utils.data as datautils
@@ -17,6 +18,14 @@ from deepSM import StepGeneration
 from deepSM import bpm_estimator
 from deepSM import wavutils
 from deepSM import utils
+from deepSM import beat_time_converter
+
+model_dir = '/home/lence/dev/deepStep/models/'
+placement_model = model_dir + '/jubo_log_rnn_epoch_1_2019-03-30_17-06-40.sd'
+gen_model = model_dir + '/jubo_log_rnn_gen_2019-03-30_20-38-24.sd'
+
+prior = 1.18
+threshold = 0.01
 
 # from memory_profiler import profile
 # @profile
@@ -24,6 +33,10 @@ def SMPipeline(
         song_file,
         placement_model_dir,
         gen_model_dir,
+        prior=prior,
+        threshold = threshold,
+        smooth=False,
+        drop_subdivs=None,
         log=False,
         bpm=None,
         use_cuda=True):
@@ -31,12 +44,20 @@ def SMPipeline(
     print(f"Processing .wav file {song_file.split('/')[-1]}")
     print(f"Using placement model {placement_model_dir.split('/')[-1]}")
     print(f"Using gen model {gen_model_dir.split('/')[-1]}")
-    print("Log", log)
-    print("Cuda", use_cuda)
+    print("CUDA:", use_cuda)
+    print("Prior:", prior)
+    print("Threshold:", threshold)
     diff_names = ['Challenge', 'Hard', 'Medium', 'Easy', 'Beginner']
+    # diff_names = ['Challenge', 'Hard']
 
-    # Threshold computed off of training data.
-    threshold = 0.1
+
+    try:
+        threshold = float(threshold)
+        threshold_dict = False
+    except:
+        with open(threshold) as f:
+            threshold_dict = json.load(f)
+
 
     song_name = song_file.split('/')[-1].split('.')[0]
 
@@ -54,8 +75,11 @@ def SMPipeline(
     # Predict step placements.
     placement_model = StepPlacement.RegularizedRecurrentStepPlacementModel(log=True)
     placement_model.load_state_dict(torch.load(placement_model_dir))
-    if use_cuda:
-        placement_model.cuda()
+    if use_cuda is not False and use_cuda is not None:
+        if isinstance(use_cuda, int):
+            placement_model.cuda()
+        else:
+            placement_model.cuda()
     placement_model.eval()
 
     preds = {}
@@ -83,9 +107,17 @@ def SMPipeline(
         with torch.no_grad():
             output = placement_model(batch_fft, batch_diffs)
 
-        output = torch.sigmoid(output)
 
-        pred = (output[0,:,0] > threshold).cpu().numpy()
+        if smooth:
+            smoothed = post_processing.smooth_outputs(output[0,:,0].cpu().numpy())
+            if threshold_dict:
+                threshold = threshold_dict[diff]
+            pred = (smoothed > np.std(smoothed) * threshold)
+            print('std:', np.std(smoothed), 'p pos:', np.sum(pred))
+        else:
+            output = torch.sigmoid(output).reshape(-1)
+            pred = (output > threshold).cpu().numpy()
+
         frame_idx = np.where(pred == 1)[0]
 
         outputs[diff] = output
@@ -104,39 +136,6 @@ def SMPipeline(
 
     if bpm is None:
         bpm = bpm_estimator.refined_bpm_estimate(preds)
-        # Search for best BPM from candidates.
-        # Consider also searching off-by-one BPMs.
-        # bpms = []
-        # for diff in diff_names:
-            # bpm = bpm_estimator.est_bpm(preds[diff])
-            # bpms.append(bpm)
-
-        # candidate_bpms = []
-        # for bpm in bpms:
-            # candidate_bpms.append(bpm-1)
-            # candidate_bpms.append(bpm)
-            # candidate_bpms.append(bpm+1)
-
-        # candidate_bpms = list(set(candidate_bpms))
-        # print("Candidate BPMS:", candidate_bpms)
-
-        # bpm_scores = []
-        # for bpm in candidate_bpms:
-            # print("Processing", bpm)
-            # score = 0
-            # for diff in diff_names:
-                # print("Diff", diff)
-
-                # offset, divnotes = \
-                     # generate_sm_file.frames_to_measures(preds[diff], bpm)
-
-                # score += sum(divnotes[0])
-
-            # bpm_scores.append(score)
-
-        # bpm_idx = np.argmin(bpm_scores)
-        # bpm = candidate_bpms[bpm_idx]
-        # print("BPM scores:", bpm_scores)
 
     offset, _ = generate_sm_file.frames_to_measures(preds['Hard'], bpm)
 
@@ -148,7 +147,10 @@ def SMPipeline(
     gen_model = StepGeneration.RegularizedRecurrentStepGenerationModel(log=True)
     gen_model.load_state_dict(torch.load(gen_model_dir))
     if use_cuda:
-        gen_model.cuda()
+        if isinstance(use_cuda, int):
+            gen_model.cuda()
+        else:
+            gen_model.cuda()
     gen_model.eval()
 
     diff_divnotes = []
@@ -168,15 +170,9 @@ def SMPipeline(
 
         loader = datautils.DataLoader(smgd)
         d = next(iter(loader))
-        # batch_fft = d['fft_features'].float().cuda()
-        # batch_fft = 1e-4 + 10**batch_fft
-        # batch_beats_before = d['beats_before'].float().unsqueeze(2).cuda()
-        # batch_beats_after = d['beats_after'].float().unsqueeze(2).cuda()
-        # batch_diff = d['diff'].float().cuda()
 
-        batch_fft, batch_beats_before, batch_beats_after, batch_diff = \
+        batch_fft, batch_diff, batch_beats_before, batch_beats_after = \
                gen_model.prepare_data(d, use_labels=False)
-        # batch_fft = 1e-4 + 10**batch_fft
 
         with torch.no_grad():
             step_outputs = gen_model(
@@ -188,13 +184,49 @@ def SMPipeline(
         step_outputs = step_outputs.cpu().numpy()
         step_tensor = step_outputs.reshape((-1, 4, 5))
 
+        # step_tensor = post_processing.reduce_jumps(step_tensor, prior=prior)
+
         step = post_processing.get_steps(step_tensor)
-        step = post_processing.remove_doubles(step_tensor, step,
-                batch_beats_before.cpu().numpy(), bpm)
+        assert np.sum(step.sum(axis=1) > 0) == step.shape[0], 'get steps'
+        step = post_processing.filter_triples(step_tensor, step)
+        assert np.sum(step.sum(axis=1) > 0) == step.shape[0], 'filter triples'
 
 
         _, divnotes = generate_sm_file.frames_to_measures(
-                preds[diff], bpm, offset=offset)
+                preds[diff], bpm, offset=offset, drop_subdivs=drop_subdivs)
+
+        btc = beat_time_converter.BeatTimeConverter(offset, [(0, bpm)], [])
+
+        # Filter notes that are too close based on aligned times.
+        # Get aligned times.
+        beat_idxs = []
+        for m_idx in range(len(divnotes[0])):
+            measure = np.array(divnotes[1][m_idx])
+            divs = divnotes[0][m_idx]
+            beat = m_idx * 4 + 4 * measure / divs
+            beat_idxs.extend(list(beat))
+
+        aligned_times = btc.beat_to_time(beat_idxs)
+        aligned_diffs = np.r_[12 * 60 / bpm, aligned_times[1:] - aligned_times[:-1]]
+
+        if not (step_tensor.shape[0] == step.shape[0] == aligned_diffs.shape[0]):
+            print("ERROR, bad shapes.")
+            print(step_tensor.shape)
+            print(step.shape)
+            print(aligned_diffs.shape)
+            print(len(divnotes[0]))
+            print(sum(map(len, divnotes[1])))
+            print(len(beat_idxs))
+            print(len(aligned_times))
+
+        step = post_processing.remove_doubles(step_tensor, step,
+                aligned_diffs, bpm)
+
+        # step = post_processing.edit_mismatched_holds(step, step_tensor)
+        print("Hold counts:", np.mean(step > 1))
+
+        print("N steps:", np.sum(step.sum(axis=1) > 0))
+
 
         diff_divnotes.append(divnotes)
         diff_steps.append(step)
@@ -205,14 +237,15 @@ def SMPipeline(
     generate_sm_file.to_SMFile(song_name, song_name + '.wav', diff_names,
             offset, bpm,
             diff_divnotes, diff_steps, subtitle=utils.timestamp(),
-            sm_path=f'{song_file[:-4]}.sm')
+            sm_path=f'{song_file[:-4]}.sm',
+            comment=f"{placement_model_dir}, {gen_model_dir}")
+
 
 
 if __name__ == '__main__':
 
-    model_dir = '/home/lence/dev/deepStep/models/'
-    placement_model = model_dir + '/fraxtil_log_rnn_epoch_1_2019-03-28_01-27-54.sd'
-    gen_model = model_dir + '/fraxtil_log_rnn_gen_2019-03-29_11-47-48.sd'
+    # placement_model = model_dir + '/fraxtil_log_rnn_epoch_1_2019-03-28_01-27-54.sd'
+    # gen_model = model_dir + '/fraxtil_log_rnn_gen_2019-03-29_11-47-48.sd'
 
 
     parser = argparse.ArgumentParser(
@@ -226,6 +259,10 @@ if __name__ == '__main__':
             help="Path to the step generation model weights.")
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--cpu", action='store_true')
+    parser.add_argument("--prior", type=float, default=prior)
+    parser.add_argument("--drop_subdivs", type=int, default=None)
+    parser.add_argument("--thresh", default=threshold)
+    parser.add_argument("--smooth", action='store_true')
 
     args = parser.parse_args()
 
@@ -233,6 +270,10 @@ if __name__ == '__main__':
             args.song_file,
             args.placement_model,
             args.gen_model,
+            args.prior,
+            args.thresh,
+            args.smooth,
+            args.drop_subdivs,
             log=False,
             bpm=args.bpm,
             use_cuda=not args.cpu)

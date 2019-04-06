@@ -22,11 +22,12 @@ def preprocess_dataset(ds_name):
 
         print(audio_file)
 
-        # subprocess.call([ 'ffmpeg', '-y',
-            # '-i', f'{song_dir}/{audio_file}',
-            # '-ac', '1',
-            # f'{song_dir}/{audio_file[:-4]}.wav'
-        # ])
+        subprocess.call([ 'ffmpeg', '-y',
+            '-i', f'{song_dir}/{audio_file}',
+            '-ac', '1',
+            '-ar', '44100',
+            f'{song_dir}/{audio_file[:-4]}.wav'
+        ])
 
         subprocess.call([
             'sed', '-i',

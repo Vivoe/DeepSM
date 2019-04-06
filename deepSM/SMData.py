@@ -50,7 +50,7 @@ class SMFile:
         associated with the song.
     """
 
-    def __init__(self, fname, raw_data_name, base_path=utils.BASE_PATH,
+    def __init__(self, fname, raw_data_name=None, base_path=utils.BASE_PATH,
             raw_data_path=None):
         print(fname)
         self.raw_data_name = raw_data_name

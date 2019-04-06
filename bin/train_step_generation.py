@@ -11,7 +11,6 @@ from deepSM import StepPlacement
 from deepSM import StepGeneration
 from deepSM import utils
 from deepSM import SMDUtils
-
 import torch
 from torch import nn
 from torch import optim
@@ -23,11 +22,12 @@ os.environ['JNG_KEY'] = 'LVZwIQEcU15ur3cvfbOGD3n75etmEP3A2nFg7n8N'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('dataset_name')
-parser.add_argument('--model_name', type=str)
+parser.add_argument('model_name', type=str)
 parser.add_argument('--chunk_size', type=int, default=32)
 parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--output_dir', type=str, default='.')
+parser.add_argument('--n_songs', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -38,6 +38,7 @@ model_name = args.model_name
 chunk_size = args.chunk_size
 n_epochs = args.epochs
 output_dir = args.output_dir
+n_songs = args.n_songs
 train_ts = utils.timestamp()
 
 
@@ -53,10 +54,10 @@ st_time = time.time()
 print("Loading data...")
 
 train_dataset = SMDUtils.get_dataset_from_file(
-    dataset_name + '_train', 'gen', chunk_size=chunk_size)
+    dataset_name + '_train', 'gen', n_songs=n_songs, chunk_size=chunk_size)
 
 test_dataset = SMDUtils.get_dataset_from_file(
-    dataset_name + '_test', 'gen', chunk_size=chunk_size)
+    dataset_name + '_test', 'gen', n_songs=n_songs, chunk_size=chunk_size)
 
 # Train/test sets are pre-generated.
 train_loader = datautils.DataLoader(
@@ -91,9 +92,12 @@ outputs = np.concatenate(
             outputs_list)),
         axis=0)
 
-labels = np.concatenate(labels, axis=0)
+print(labels_list[0].shape)
+labels = np.concatenate(labels_list, axis=0).reshape((-1, 4))
 
 preds = np.argmax(outputs, axis=2)
+print(labels.shape)
+print(preds.shape)
 
 accuracy = {}
 overall_acc = np.mean(labels == preds)
@@ -107,12 +111,10 @@ print("Accuracy:", accuracy)
 
 utils.notify(accuracy)
 
-if model_name is None:
-    model_name = str(type(model)).split("'")[1].split('.')[-1]
-    model_save = f"{output_dir}/models/fraxtil_log_rnn_gen_{train_ts}.sd"
+model_save = f"{output_dir}/models/{model_name}_{train_ts}.sd"
 
 torch.save(model.state_dict(), model_save)
 
 total_time = time.time() - st_time
 
-utils.notify(f"Done. Total time: {utils.format_time(total_time)")
+utils.notify(f"Done. Total time: {utils.format_time(total_time)}")

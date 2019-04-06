@@ -7,6 +7,7 @@ import os
 import importlib
 import time
 
+
 from deepSM import wavutils
 
 
@@ -50,6 +51,7 @@ difficulties = {
 }
 
 inv_difficulties = inv_dict(difficulties)
+
 
 def log_run(env):
     data = {}

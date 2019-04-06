@@ -8,7 +8,7 @@ import warnings
 def read_wav(fname):
     # Converts to [-1, 1] range.
     rate, data = wavfile.read(fname)
-    assert rate == 44100, "WHY ARE YOU NOT USING 44.1K"
+    assert rate == 44100, f"WHY ARE YOU NOT USING 44.1K @ {fname}"
     return rate, data / 32767
 
 def write_wav(fname, data, rate=44100):

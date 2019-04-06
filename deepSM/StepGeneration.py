@@ -81,6 +81,7 @@ class RegularizedRecurrentStepGenerationModel(NNModel.NNModel):
         if use_labels:
             labels = batch['step_type_labels'].long()
         fft_features = batch['fft_features'].float()
+        batch_size = fft_features.shape[0]
         beats_before = batch['beats_before'].unsqueeze(2).float()
         beats_after = batch['beats_after'].unsqueeze(2).float()
         diff = batch['diff'].float()
