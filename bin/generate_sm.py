@@ -20,15 +20,13 @@ from deepSM import wavutils
 from deepSM import utils
 from deepSM import beat_time_converter
 
-model_dir = '/home/lence/dev/deepStep/models/'
-placement_model = model_dir + '/jubo_log_rnn_epoch_1_2019-03-30_17-06-40.sd'
-gen_model = model_dir + '/jubo_log_rnn_gen_2019-03-30_20-38-24.sd'
+# model_dir = '/home/lence/dev/deepStep/models/'
+# placement_model = model_dir + '/jubo_log_rnn_epoch_1_2019-03-30_17-06-40.sd'
+# gen_model = model_dir + '/jubo_log_rnn_gen_2019-03-30_20-38-24.sd'
 
 prior = 1.18
 threshold = 0.01
 
-# from memory_profiler import profile
-# @profile
 def SMPipeline(
         song_file,
         placement_model_dir,
@@ -244,18 +242,15 @@ def SMPipeline(
 
 if __name__ == '__main__':
 
-    # placement_model = model_dir + '/fraxtil_log_rnn_epoch_1_2019-03-28_01-27-54.sd'
-    # gen_model = model_dir + '/fraxtil_log_rnn_gen_2019-03-29_11-47-48.sd'
-
 
     parser = argparse.ArgumentParser(
             description="Generate step maps from raw a .wav file.")
 
     parser.add_argument("song_file", type=str,
             help="Path to directory containing a single channel .wav file.")
-    parser.add_argument("--placement_model", type=str, default=placement_model,
+    parser.add_argument("placement_model", type=str,
             help="Path to the placement model weights.")
-    parser.add_argument("--gen_model", type=str, default=gen_model,
+    parser.add_argument("gen_model", type=str,
             help="Path to the step generation model weights.")
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--cpu", action='store_true')

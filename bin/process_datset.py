@@ -35,9 +35,8 @@ if __name__ == '__main__':
     parser.add_argument('--n_threads', type=int, default=-1)
     parser.add_argument('--cpu', action='store_true')
     parser.add_argument("--prior", type=float, default=generate_sm.prior)
-    parser.add_argument("--drop_subdivs", type=int, default=None)
-    parser.add_argument("--thresh", default=0.01)
-    parser.add_argument("--smooth", action='store_true')
+    parser.add_argument("--drop_subdivs", type=int, default=1)
+    parser.add_argument("--thresh", default=1.65)
 
     args = parser.parse_args()
 
@@ -75,7 +74,7 @@ if __name__ == '__main__':
                     [gen_model] * n,
                     [args.prior] * n,
                     [args.thresh] * n,
-                    [args.smooth] * n,
+                    [True] * n,
                     [args.drop_subdivs] * n,
                     [False] * n,
                     bpms,
