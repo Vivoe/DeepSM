@@ -6,23 +6,19 @@ import json
 import torch
 import torch.utils.data as datautils
 
-import convert_to_gen_dataset
-
 from deepSM import post_processing
 from deepSM import SMDUtils
 from deepSM import SMDataset
 from deepSM import SMGenDataset
 from deepSM import generate_sm_file
+from deepSM import beat_alignment
 from deepSM import StepPlacement
 from deepSM import StepGeneration
 from deepSM import bpm_estimator
 from deepSM import wavutils
 from deepSM import utils
 from deepSM import beat_time_converter
-
-# model_dir = '/home/lence/dev/deepStep/models/'
-# placement_model = model_dir + '/jubo_log_rnn_epoch_1_2019-03-30_17-06-40.sd'
-# gen_model = model_dir + '/jubo_log_rnn_gen_2019-03-30_20-38-24.sd'
+from deepSM import convert_to_gen_dataset
 
 prior = 1.18
 threshold = 0.01
@@ -135,7 +131,7 @@ def SMPipeline(
     if bpm is None:
         bpm = bpm_estimator.refined_bpm_estimate(preds)
 
-    offset, _ = generate_sm_file.frames_to_measures(preds['Hard'], bpm)
+    offset, _ = beat_alignment.frames_to_measures(preds['Hard'], bpm)
 
 
     print("Final BPM:", bpm)
@@ -190,7 +186,7 @@ def SMPipeline(
         assert np.sum(step.sum(axis=1) > 0) == step.shape[0], 'filter triples'
 
 
-        _, divnotes = generate_sm_file.frames_to_measures(
+        _, divnotes = beat_alignment.frames_to_measures(
                 preds[diff], bpm, offset=offset, drop_subdivs=drop_subdivs)
 
         btc = beat_time_converter.BeatTimeConverter(offset, [(0, bpm)], [])
@@ -252,12 +248,20 @@ if __name__ == '__main__':
             help="Path to the placement model weights.")
     parser.add_argument("gen_model", type=str,
             help="Path to the step generation model weights.")
+
+    parser.add_argument("threshold",
+            help="""Integer or string value (Typically around 1.7 for smoothed) for the threshold.
+If string, should point to a threshold dictionary.
+""")
+
     parser.add_argument("--bpm", type=int)
     parser.add_argument("--cpu", action='store_true')
     parser.add_argument("--prior", type=float, default=prior)
-    parser.add_argument("--drop_subdivs", type=int, default=None)
-    parser.add_argument("--thresh", default=threshold)
-    parser.add_argument("--smooth", action='store_true')
+
+    # Drop subdivs by default, and use smoothing by default.
+    # parser.add_argument("--drop_subdivs", type=int, default=None)
+    parser.add_argument("--drop_subdivs", action='store_false')
+    parser.add_argument("--smooth", action='store_false')
 
     args = parser.parse_args()
 

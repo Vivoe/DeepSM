@@ -10,9 +10,8 @@ import time
 
 from deepSM import wavutils
 
-
-assert False, "PLEASE SET THE BASE PATH IN deepSM/utils.py!"
-# BASE_PATH = '/home/lence/dev/deepStep'
+utils_path = os.path.dirname(os.path.realpath(__file__))
+BASE_PATH = '/'.join(utils_path.split('/')[:-1])
 
 def timestamp():
     os.environ['TZ'] = 'America/New_York'

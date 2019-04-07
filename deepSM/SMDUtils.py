@@ -183,6 +183,9 @@ def augment_dataset(
         dataset_name, model_name, base_path=utils.BASE_PATH, **kwargs):
     """
     Adds step predictions to the dataset.
+
+    Currently unused, as we train step generation models based on true step
+    placement labels.
     """
 
     new_dataset_name = f"{dataset_name}_placement"

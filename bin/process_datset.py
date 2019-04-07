@@ -7,16 +7,6 @@ import numpy as np
 base_dir = os.getcwd()
 song_dirs = os.listdir()
 
-# model_dir = '/home/lence/dev/deepStep/models/'
-# placement_model = model_dir + '/fraxtil_log_rnn_epoch_1_2019-03-28_01-27-54.sd'
-# gen_model = model_dir + '/RegularizedRecurrentStepGenerationModel_2019-03-25_23-03-26.sd'
-# gen_model = model_dir + '/fraxtil_log_rnn_gen_2019-03-29_11-47-48.sd'
-
-# placement_model = model_dir + '/jubo_log_rnn_epoch_1_2019-03-30_17-06-40.sd'
-# gen_model = model_dir + '/jubo_log_rnn_gen_2019-03-30_20-38-24.sd'
-# gen_model = model + '/jubo_log_rnn_gen_2019-03-31_14-12-13.sd'
-
-
 
 def get_bpm(fname):
     with open(fname) as f:
@@ -27,16 +17,20 @@ def get_bpm(fname):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('placement_model', type=str)
+    parser.add_argument('gen_model', type=str)
+    parser.add_argument("threshold",
+            help="""Integer or string value (Typically around 1.7 for smoothed) for the threshold.
+If string, should point to a threshold dictionary.
+""")
+
     parser.add_argument('--infer_bpm', action='store_true')
-    parser.add_argument('--placement_model', type=str,
-            default=generate_sm.placement_model)
-    parser.add_argument('--gen_model', type=str,
-            default=generate_sm.gen_model)
     parser.add_argument('--n_threads', type=int, default=-1)
     parser.add_argument('--cpu', action='store_true')
-    parser.add_argument("--prior", type=float, default=generate_sm.prior)
-    parser.add_argument("--drop_subdivs", type=int, default=1)
-    parser.add_argument("--thresh", default=1.65)
+    parser.add_argument("--prior", type=float, default=generate_sm.prior,
+            help="Currently unused.")
+    parser.add_argument("--drop_subdivs", action='store_false',
+            help="Snap notes to at most 24th subdivisions. Default: True")
 
     args = parser.parse_args()
 
@@ -73,7 +67,7 @@ if __name__ == '__main__':
                     [placement_model] * n,
                     [gen_model] * n,
                     [args.prior] * n,
-                    [args.thresh] * n,
+                    [args.threshold] * n,
                     [True] * n,
                     [args.drop_subdivs] * n,
                     [False] * n,
@@ -91,8 +85,8 @@ if __name__ == '__main__':
                 placement_model,
                 gen_model,
                 args.prior,
-                args.thresh,
-                args.smooth,
+                args.threshold,
+                True,
                 args.drop_subdivs,
                 log=False,
                 bpm=bpm,

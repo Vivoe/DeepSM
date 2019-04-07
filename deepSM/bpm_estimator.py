@@ -4,7 +4,7 @@ from scipy import stats
 from statsmodels.tsa.stattools import acf
 import warnings
 
-from deepSM import generate_sm_file
+from deepSM import beat_alignment
 
 def cut_to_bpm_range(bpm, min_bpm=120):
     x = np.log2(bpm) - np.log2(min_bpm)
@@ -67,7 +67,7 @@ def refined_bpm_estimate(preds, min_bpm=120):
         score = 0
         for diff in preds.keys():
             offset, divnotes = \
-                    generate_sm_file.frames_to_measures(preds[diff], bpm)
+                    beat_alignment.frames_to_measures(preds[diff], bpm)
 
             score += sum(divnotes[0])
 
@@ -81,6 +81,8 @@ def refined_bpm_estimate(preds, min_bpm=120):
 
 def true_bpm(sm, min_bpm=120, req_thresh=0.4):
     """
+    Gets the fundamental BPM from the source file.
+
     Takes the BPM with the largest amount of time, or integer multiples of.
     Must compose of at least req_thresh% of the song.
     """

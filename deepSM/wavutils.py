@@ -40,8 +40,6 @@ def test_alignment(wav, times):
         if dinglen <= 0:
             continue
 
-
-
         out[time:time+dinglen] += ding[:dinglen]
 
     return out
