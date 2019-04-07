@@ -35,6 +35,10 @@ def smooth_outputs(outputs, q=10):
     return smooth_outputs
 
 def edit_mismatched_holds(preds, outputs):
+    """
+    Currently unused/in testing.
+    """
+
     # Ignore the existance of type 3/4s.
     preds = np.maximum(preds, 2)
 
@@ -109,6 +113,10 @@ def get_steps(step_tensor):
 
 
 def reduce_jumps(output_tensor, alpha=1, prior=1.13):
+    """
+    Not used, since removing doubles seems to do it well enough.
+    """
+
     def exp_jumps(output_tensor, T):
         log_prob_step = output_tensor[:,:,0] + T - np.log(
                 np.exp(output_tensor[:,:,0] + T) +

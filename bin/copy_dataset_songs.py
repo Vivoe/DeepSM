@@ -1,3 +1,8 @@
+"""
+Copies raw files for songs in a dataset to gen for testing.
+"""
+
+
 import os
 import shutil
 import argparse
