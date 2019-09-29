@@ -1,0 +1,17 @@
+# FROM 746614075791.dkr.ecr.us-west-1.amazonaws.com/sagemaker-scikit-learn:0.20.0-cpu-py3
+FROM 520713654638.dkr.ecr.us-west-1.amazonaws.com/sagemaker-pytorch:1.1.0-cpu-py3
+
+MAINTAINER Justin Ng (Vivoe)
+
+RUN apt-get -y update && apt-get install -y --no-install-recommends ffmpeg unzip
+
+RUN pip install python-speech-features
+
+# ENV PATH="/opt/ml/code:${PATH}"
+
+# /opt/ml and all subdirectories are utilized by SageMaker, we use the /code subdirectory to store our user code.
+# COPY sagemaker/format_audio.py /opt/ml/code/format_audio.py
+
+# this environment variable is used by the SageMaker PyTorch container to determine our user code directory.
+# ENV SAGEMAKER_SUBMIT_DIRECTORY /opt/ml/code
+# ENV SAGEMAKER_PROGRAM format_audio.py
