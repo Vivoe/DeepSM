@@ -7,8 +7,7 @@ import os
 import importlib
 import time
 
-
-from deepSM import wavutils
+import boto3
 
 utils_path = os.path.dirname(os.path.realpath(__file__))
 BASE_PATH = '/'.join(utils_path.split('/')[:-1])
@@ -52,4 +51,33 @@ difficulties = {
 
 inv_difficulties = inv_dict(difficulties)
 
+def my_deserializer(ret, y):
+    buf = io.BytesIO(ret.read())
+    hf = h5py.File(buf)
+    return hf
 
+def notify(msg):
+    lambd = boto3.client('lambda', region_name='us-east-2')
+    json_str = '{"message": "'+msg+'"}'
+    lambd.invoke(FunctionName='sendNotif', 
+                 Payload=json_str.encode(),
+                 InvocationType='Event')
+    
+    
+def send_image(img_url):
+    lambd = boto3.client('lambda', region_name='us-east-2')
+    data = {'image': img_url}
+    lambd.invoke(FunctionName='sendNotif', 
+                 Payload=json.dumps(data).encode(), 
+                 InvocationType='Event')
+    
+    
+def upload_image_obj(obj, bucket, path):
+    s3 = boto3.client('s3')
+    s3.upload_fileobj(obj, bucket, path,
+                      ExtraArgs={'ACL':'public-read',
+                                'ContentType':'image/png'})
+    
+    
+def get_s3_url(bucket, path, region='us-west-1'):
+    return f'https://{bucket}.s3-{region}.amazonaws.com/{path}'

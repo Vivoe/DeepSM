@@ -8,6 +8,7 @@ import os
 import argparse
 import subprocess
 
+
 def preprocess_dataset(ds_name):
     songs = os.listdir(f'data/{ds_name}')
 
@@ -37,17 +38,17 @@ def preprocess_dataset(ds_name):
 
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=
-"""
-Prepares .sm and audio files for training.
-Converts audio files to single channel .wav files, and directs
-the .sm files to the new .wav files.
-""")
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser(description=
+# """
+# Prepares .sm and audio files for training.
+# Converts audio files to single channel .wav files, and directs
+# the .sm files to the new .wav files.
+# """)
 
-    parser.add_argument('dataset', type=str, help='Directory of song files.')
+#     parser.add_argument('dataset', type=str, help='Directory of song files.')
 
-    args = parser.parse_args()
+#     args = parser.parse_args()
 
-    preprocess_dataset(args.dataset)
+#     preprocess_dataset(args.dataset)
 

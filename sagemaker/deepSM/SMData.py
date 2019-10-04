@@ -64,7 +64,14 @@ class SMFile:
         # Process header information and parse notes.
         # return lines
         self.note_charts = {}
+        self.title = 'UNKNOWN'
+        self.music = 'UNKNOWN'
+        self.bpms = None
+        self.stops = []
+        self.offset = 0
+        
         for line in lines:
+            
             if line.startswith('#TITLE:'):
                 self.title = line.split(':')[1]
 

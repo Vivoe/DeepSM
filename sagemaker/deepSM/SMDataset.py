@@ -1,4 +1,5 @@
 import os
+import io
 
 import numpy as np
 import torch
@@ -18,10 +19,11 @@ reload(utils)
 
 __version__ = '2-0-0'
 
-def load(song_name, dataset_name, base_path=utils.BASE_PATH, **kwargs):
+def load(f, **kwargs):
+    if isinstance(f, bytes):
+        f = io.BytesIO(f)
 
-    fname = f'{base_path}/datasets/{dataset_name}/{song_name}/{song_name}.h5'
-    with h5py.File(fname, 'r') as hf:
+    with h5py.File(f, 'r') as hf:
 
         song_name = hf.attrs['song_name']
         assert song_name == song_name
@@ -162,15 +164,13 @@ class SMDataset(Dataset):
     def save(self, buf):
         # Takes in a bytes-like object and writes to that.
 #         with h5py.File(buf) as hf:
-        hf = h5py.File(buf)
+        with h5py.File(buf) as hf:
+            hf.attrs['song_name'] = self.song_name
+            hf.attrs['diffs'] = np.array(self.diffs, dtype='S10')
+            hf.attrs['context_size'] = self.context_size
 
-        hf.attrs['song_name'] = self.song_name
-        hf.attrs['diffs'] = np.array(self.diffs, dtype='S10')
-        hf.attrs['context_size'] = self.context_size
-
-        hf.create_dataset('fft_features', data=self.fft_features)
-        hf.create_dataset('step_pos_labels', data=self.step_pos_labels)
-        hf.create_dataset('step_type_labels', data=self.step_type_labels)
+            hf.create_dataset('fft_features', data=self.fft_features)
+            hf.create_dataset('step_pos_labels', data=self.step_pos_labels)
+            hf.create_dataset('step_type_labels', data=self.step_type_labels)
         
-        return hf
-
+        return buf

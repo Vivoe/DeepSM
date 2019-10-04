@@ -1,3 +1,4 @@
+import argparse
 import io
 import glob
 import os
@@ -5,16 +6,14 @@ import numpy as np
 from scipy.io import wavfile
 from subprocess import Popen, PIPE
 import subprocess
+import shutil
+import uuid
 
 from deepSM import SMData
 import deepSM.beat_time_converter as BTC
 from deepSM import SMDataset
 from deepSM import utils, wavutils
 
-
-def run_cmd(cmd):
-    p = Popen(cmd, stdout=PIPE, stderr=PIPE)
-    return p.communicate()
 
 def model_fn(model_dir):
     print("Loading model")
@@ -24,50 +23,60 @@ def model_fn(model_dir):
 
 def input_fn(body, content_type):
     # Expects zip file.
-    print("Input function.")
-    print(content_type)
-    print(type(body))
-    os.mkdir('temp')
-    os.chdir('temp')
-    with open('tempfile.zip', 'wb') as f:
+    print(f"Input function: content type: {content_type}. Body type: {type(body)}")
+    
+    init_dir = os.getcwd()
+    
+    temp_dir = str(uuid.uuid1())
+    print("UUID", temp_dir)
+    
+    if os.path.isdir(temp_dir):
+        shutil.rmtree(temp_dir)
+        
+    os.mkdir(temp_dir)
+    with open(f'{temp_dir}/tempfile.zip', 'wb') as f:
         f.write(body)
         
-    p = Popen(['unzip', 'tempfile.zip'], stdout=PIPE, stderr=PIPE)
-    print(p.communicate())
+    p = Popen(['unzip', f'{temp_dir}/tempfile.zip', '-d', temp_dir], stdout=PIPE, stderr=PIPE)
+    print(f'UNZIP {p.communicate()}')
     
-    p = Popen(['rm', 'tempfile.zip'], stdout=PIPE, stderr=PIPE)
-    print(p.communicate())
+    p = Popen(['rm', f'{temp_dir}/tempfile.zip'], stdout=PIPE, stderr=PIPE)
+    p.communicate()
     
-    print(os.listdir())
-    os.chdir(os.listdir()[0])
+    print(f'LISTDIR TEMP_DIR', os.listdir(temp_dir))
+    new_dir = os.listdir(temp_dir)[0]
     
-    print(os.listdir())
+    print("NEW DIR", new_dir)
+    
+    print("TEMP_DIR/NEW_DIR", os.listdir(f'{temp_dir}/{new_dir}'))
     
     # Expects audio file and .sm file. Load both into memory.
     # Find audio file name.
-    files = os.listdir()
-    audiofilename = next(filter(lambda x: x[-4:] in ['.mp3', '.ogg', '.wav'], files))
-    
-    print(run_cmd(['pwd']))
+    files = os.listdir(f'{temp_dir}/{new_dir}')
+    audiofilename = next(filter(lambda x: x[-4:].lower() in ['.mp3', '.ogg', '.wav'], files))
     
     p = Popen(['ffmpeg', '-y',
-        '-i', audiofilename,
+        '-i', f'{temp_dir}/{new_dir}/{audiofilename}',
         '-ac', '1',
         '-ar', '44100',
-        'tempaudio.wav'
+        f'{temp_dir}/{new_dir}/tempaudio.wav'
     ], stdout=PIPE, stderr=PIPE)
     
-    print(p.communicate())
+    print("FFMPEG", p.communicate())
     
-    _, data = wavfile.read('tempaudio.wav')
+    _, data = wavfile.read(f'{temp_dir}/{new_dir}/tempaudio.wav')
     data = data / 32767
     
     # Read smfile into memory.
     smfilename = next(filter(lambda x: x[-3:] == '.sm', files))
     songname = smfilename[:-3]
-    with open(smfilename) as f:
+    with open(f'{temp_dir}/{new_dir}/{smfilename}') as f:
         smfile = f.read()
         
+    os.chdir(init_dir)
+    shutil.rmtree(temp_dir)
+    
+    print("UUID DONE", temp_dir)
     return (songname, smfile, data)
     
     
@@ -112,10 +121,8 @@ def predict_fn(raw_data, model):
 
 
     # Get FFT Transform.
-    fft_features = wavutils.gen_fft_features(padded_wav, log=True)
+    fft_features = wavutils.gen_fft_features(padded_wav)
 
-    
-    return 'alive'
     # N_channels = 3 (1024, 2048, 4096)
     # N_frames ~ song length * 44100 / 512
     # N_freqs = 80 (Number of mel coefs per frame)
@@ -135,11 +142,26 @@ def predict_fn(raw_data, model):
             step_type_labels[i, j, :] = np.array(list(map(int, note)))
 
 
-    return SMDataset.SMDataset(
+    smd = SMDataset.SMDataset(
             songname, diffs, fft_features, step_pos_labels, step_type_labels)
+    
+    return smd
 
 def output_fn(data, ret_content_type):
-    # Return HDF5 bytestream.
-    ret = data.save(io.BytesIO()).read()
+    print("OUTPUTFUNCTION")
     
-    return ret
+    buf = io.BytesIO()
+    buf = data.save(buf)
+    
+    return buf.getvalue()
+
+
+
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model-dir', type=str, default=os.environ['SM_MODEL_DIR'])
+    args = parser.parse_args()
+    
+    with open(f'{args.model_dir}/model.joblib', 'w') as f:
+        f.write('Justin is stoopid')

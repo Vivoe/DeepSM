@@ -67,30 +67,22 @@ def pad_wav(first_frame, last_frame, wav, step=512):
     return (n_front_pad // step, padded_wav)
 
 
-def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80, log=True):
+def gen_fft_features(wav, step=512, nfft=[2048,4096], n_bands=80):
     features = []
     # Ignoring warnings here.
     # Will warn about issues calculating MEL filters when nfft = 1024.
     # Causes a strange black band at band 5ish. Will ignore for now.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        print("alive")
         for fft_size in nfft:
-            print("FFTING")
             # mel_features is of shape [T, F]
             mel_features, mel_energy = fbank(
                 wav, nfft=fft_size,
                 samplerate=44100, nfilt=n_bands, winfunc=np.hamming,
                 lowfreq=27.5, highfreq=8000.0,
                 winstep=512/44100)
-            print("post fft")
 
-            if log:
-                features.append(np.log10(mel_features + 1e-4))
-            else:
-                features.append(mel_features)
-                
-        print("still alive????")
+            features.append(np.log10(mel_features + 1e-4))
 
     # Reutnrs shape [Channels, Time, Frequency]
     # return np.log10(np.stack(features))
