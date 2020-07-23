@@ -1,0 +1,35 @@
+audio:
+    contextWindowSize: 7
+    samplesPerFrame: 512
+    sampleRate: 44100
+    fft:
+      nfft: # Windows from 1 to 4 samples long.
+        - 512
+        - 1024
+        - 2048
+      fmin: 0
+      fmax: 8000
+      nMels: 128
+network:
+  conv:
+    convA:
+      width: 3
+      height: 7
+    convB:
+      width: 7
+      height: 3
+    convOutput:
+      width: 3
+      height: 3
+    convChannels:
+      - 50
+      - 50
+      - 20
+  placement:
+    lr: 0.01
+    batchSize: 128
+    stepThreshold: 0.1
+    fc:
+      outputSize1: 128
+      outputSize2: 64
+

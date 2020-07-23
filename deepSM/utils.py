@@ -6,12 +6,21 @@ import json
 import os
 import importlib
 import time
+import yaml
 
-
-from deepSM import wavutils
 
 utils_path = os.path.dirname(os.path.realpath(__file__))
 BASE_PATH = '/'.join(utils_path.split('/')[:-1])
+
+
+def load_config():
+    global config
+
+    with open(f'{BASE_PATH}/config/config.yaml') as f:
+        config = yaml.safe_load(f)
+
+load_config()
+
 
 def timestamp():
     os.environ['TZ'] = 'America/New_York'
@@ -25,16 +34,24 @@ def format_time(s):
 
     return "{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), secs)
 
-def convert_to_mono(dataset):
-    mp3s = glob.glob(f'data/{dataset}/*/*.mp3')
-    oggs = glob.glob(f'data/{dataset}/*/*.ogg')
-    audio_files = mp3s + oggs
-    print(audio_files)
+def format_neptune_params(config=config):
+    def _format(d):
+        res = {}
+        for key in d:
+            if isinstance(d[key], dict):
+                sub_dict = _format(d[key])
+                for sub_key in sub_dict:
+                    res[f"{key}.{sub_key}"] = sub_dict[sub_key]
+            else:
+                res[key] = d[key]
+        return res
 
-    for audiof in audio_files:
-        print(audiof)
-        fname = audiof[:-4]
-        subprocess.call(['ffmpeg', '-y', '-i', audiof, '-ac', '1', '-ar', '44100', fname+'.wav'])
+    return _format(config)
+
+def get_neptune_api_token():
+    with open('/home/lence/.neptune') as f:
+        api_token = f.readline().strip()
+    return api_token
 
 def flatmap(a):
     return list(itertools.chain.from_iterable(a))
