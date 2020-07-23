@@ -1,7 +1,6 @@
 import subprocess
 import itertools
 import glob
-import requests
 import json
 import os
 import importlib

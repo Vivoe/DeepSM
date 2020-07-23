@@ -14,11 +14,11 @@ config = utils.config
 
 class ConvPlacementModel(pl.PlacementModel):
 
-    def __init__(self, datapath, debug=False):
+    def __init__(self, datapath, debug=False, **kwargs):
         """
         Datapath should point to a folder with train/test folders.
         """
-        super().__init__(debug=debug)
+        super().__init__(debug=debug, **kwargs)
         self.datapath = datapath
         self.debug = debug
 
@@ -103,7 +103,9 @@ class ConvPlacementModel(pl.PlacementModel):
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(), 
-            lr=config['network']['placement']['lr'])
+            lr=self.learning_rate
+            # lr=config['network']['placement']['lr']
+        )
 
 
     def train_dataloader(self):

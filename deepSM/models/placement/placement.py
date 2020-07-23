@@ -5,8 +5,6 @@ from pytorch_lightning.logging.neptune import NeptuneLogger
 from pytorch_lightning.core.lightning import LightningModule
 import pytorch_lightning.metrics.functional as fmetrics 
 
-from neptunecontrib.api import log_chart
-
 import matplotlib.pyplot as plt
 
 from deepSM import utils
@@ -18,15 +16,22 @@ class PlacementModel(LightningModule):
     Handles PlacementModel testing functionality.
     """
     
-    def __init__(self, debug=False):
+    def __init__(self, 
+        learning_rate=config['network']['placement']['lr'], 
+        debug=False, 
+        tags=[]):
+
         super().__init__()
+
+        self.learning_rate = learning_rate
 
         debug_str = '-debug' if debug else ''
 
         self.nep_logger = NeptuneLogger(
             api_key=utils.get_neptune_api_token(),
             project_name='vivoe/deepSM-step-placement' + debug_str,
-            params=utils.format_neptune_params()
+            params=utils.format_neptune_params(),
+            tags=['placement-model'] + tags
         )
 
     def test_epoch_end(self, outputs):
@@ -47,7 +52,7 @@ class PlacementModel(LightningModule):
 
         fig, ax = plt.subplots()
         ax.set_title('pred histogram')
-        ax.hist(preds, bins=50)
+        ax.hist(probs.cpu().numpy(), bins=50)
         self.nep_logger.experiment.log_image('pred_histogram', fig)
         plt.clf()
 
