@@ -36,45 +36,58 @@ class PlacementModel(LightningModule):
         avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
 
         scores = torch.cat([x['scores'] for x in outputs])
-        labels = torch.cat([x['labels'] for x in outputs])
+        exact_labels = torch.cat([x['labels'] for x in outputs])
+        fuzzy_labels = torch.cat([x['fuzzy_labels'] for x in outputs])
 
+        # Prediction-only metrics
         probs = F.sigmoid(scores)
-
         step_threshold = config['network']['placement']['stepThreshold']
         preds = probs > step_threshold
-
         self.nep_logger.experiment.log_metric("percent_positive", preds.float().mean())
 
-        acc = fmetrics.accuracy(preds, labels) 
-        self.nep_logger.experiment.log_metric('test_accuracy', acc)
-
-        fpr, tpr, threshs = fmetrics.roc(probs, labels)
-        auroc = fmetrics.auc(fpr, tpr)
-
         fig, ax = plt.subplots()
-        ax.set_title("ROC")
-        ax.set_xlabel("False Positive Rate")
-        ax.set_ylabel("True Positive Rate")
-        ax.plot(fpr.cpu().numpy(), tpr.cpu().numpy())
-
-        self.nep_logger.experiment.log_metric('test_auroc', auroc)
-        self.nep_logger.experiment.log_image('roc_figure', fig)
-
+        ax.set_title('pred histogram')
+        ax.hist(preds, bins=50)
+        self.nep_logger.experiment.log_image('pred_histogram', fig)
         plt.clf()
 
-        f1 = fmetrics.f1_score(probs, labels)
-        self.nep_logger.experiment.log_metric('test_f1', f1)
 
-        precision, recall, threshs = fmetrics.precision_recall_curve(probs, labels)
-        prauc = fmetrics.auc(recall, precision)
+        label_iters = [
+            (exact_labels, 'exact_'),
+            (fuzzy_labels, 'fuzzy_')
+        ] 
 
-        fig, ax = plt.subplots()
-        ax.set_title("PR Curve")
-        ax.set_xlabel("Recall")
-        ax.set_ylabel("Precision")
-        ax.plot(recall.cpu().numpy(), precision.cpu().numpy())
+        for labels, label_type in label_iters:
+            acc = fmetrics.accuracy(preds, labels) 
+            self.nep_logger.experiment.log_metric(label_type + 'test_accuracy', acc)
 
-        self.nep_logger.experiment.log_metric('test_prauc', prauc)
-        self.nep_logger.experiment.log_image('pr_figure', fig)
+            fpr, tpr, threshs = fmetrics.roc(probs, labels)
+            auroc = fmetrics.auc(fpr, tpr)
 
-        plt.clf()
+            fig, ax = plt.subplots()
+            ax.set_title(label_type + "ROC")
+            ax.set_xlabel("False Positive Rate")
+            ax.set_ylabel("True Positive Rate")
+            ax.plot(fpr.cpu().numpy(), tpr.cpu().numpy())
+
+            self.nep_logger.experiment.log_metric(label_type + 'test_auroc', auroc)
+            self.nep_logger.experiment.log_image(label_type + 'roc_figure', fig)
+
+            plt.clf()
+
+            f1score = fmetrics.f1_score(probs, labels)
+            self.nep_logger.experiment.log_metric(label_type + 'test_f1', f1score)
+
+            precision, recall, threshs = fmetrics.precision_recall_curve(probs, labels)
+            prauc = fmetrics.auc(recall, precision)
+
+            fig, ax = plt.subplots()
+            ax.set_title(label_type + "PR Curve")
+            ax.set_xlabel("Recall")
+            ax.set_ylabel("Precision")
+            ax.plot(recall.cpu().numpy(), precision.cpu().numpy())
+
+            self.nep_logger.experiment.log_metric(label_type + 'test_prauc', prauc)
+            self.nep_logger.experiment.log_image(label_type + 'pr_figure', fig)
+
+            plt.clf()

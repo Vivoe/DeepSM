@@ -29,22 +29,28 @@ class ConvPlacementModel(pl.PlacementModel):
         configB = config['network']['conv']['convB']
         self.convB = ConvPath(configB['width'], configB['height'])
 
-        configFC = config['network']['placement']['fc']
+        configFC = config['network']['placement']['fcLayers']
 
-        # Join A/B paths and add extra dim for difficulty.
-        self.fc1 = nn.Linear(
+        fcs = []
+        fcs.append(nn.Linear(
             self.convA.output_size + self.convB.output_size + 1,
-            configFC['outputSize1']
-        )
+            configFC[0]
+        ))
+        
+        for i in range(1, len(configFC)):
+            fcs.append(nn.Linear(
+                configFC[i-1],
+                configFC[i]
+            ))
 
-        self.fc2 = nn.Linear(
-            configFC['outputSize1'],
-            configFC['outputSize2']
-        )
+        fcs.append(nn.Linear(
+            configFC[-1],
+            1
+        ))
 
-        self.fc3 = nn.Linear(configFC['outputSize2'], 1)
-
+        self.fcs = nn.ModuleList(fcs)
     
+
     def forward(self, inputs):
         fft_features, diff = inputs
 
@@ -57,9 +63,10 @@ class ConvPlacementModel(pl.PlacementModel):
             diff.float().reshape((-1, 1))
         ], dim=1)
 
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        for fc in self.fcs[:-1]:
+            x = F.relu(fc(x))
+
+        return self.fcs[-1](x)
 
 
     def training_step(self, batch, batch_idx):
@@ -81,10 +88,16 @@ class ConvPlacementModel(pl.PlacementModel):
         fft_features = batch['fft_features']
         diff = batch['diff']
         timing_labels = batch['timing_labels']
+        fuzzy_labels = batch['fuzzy_timing_labels']
 
         y_hat = self((fft_features, diff)).reshape(-1)
         loss = F.binary_cross_entropy_with_logits(y_hat, timing_labels)
-        return {'test_loss': loss, 'scores': y_hat, 'labels': timing_labels}
+        return {
+            'test_loss': loss, 
+            'scores': y_hat, 
+            'labels': timing_labels,
+            'fuzzy_labels': fuzzy_labels
+        }
 
 
     def configure_optimizers(self):

@@ -62,11 +62,22 @@ class SMDataset(tdata.Dataset):
         start_frame = frame_idx - audio_config['contextWindowSize']
         end_frame = frame_idx + audio_config['contextWindowSize'] + 1
 
+        timing_labels = (
+            self.note_labels[diff_idx, frame_idx, :]
+                .sum().clamp_max(1)
+        )
+
+        fuzzy_timing_labels = (
+            self.note_labels[diff_idx, frame_idx-1:frame_idx+1, :]
+                .sum().clamp_max(1)
+        )
+        
         res = {
             'fft_features': self.mel_data[:, :, start_frame:end_frame],
             'diff': self.diffs[diff_idx],
             'dir_labels': self.note_labels[diff_idx, frame_idx, :],
-            'timing_labels': self.note_labels[diff_idx, frame_idx, :].sum()
+            'timing_labels': timing_labels,
+            'fuzzy_timing_labels': fuzzy_timing_labels
         }
 
         return res

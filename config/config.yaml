@@ -1,5 +1,5 @@
 audio:
-    contextWindowSize: 7
+    contextWindowSize: 34
     samplesPerFrame: 512
     sampleRate: 44100
     fft:
@@ -24,12 +24,14 @@ network:
     convChannels:
       - 50
       - 50
+      - 30
       - 20
   placement:
     lr: 0.01
     batchSize: 128
     stepThreshold: 0.1
-    fc:
-      outputSize1: 128
-      outputSize2: 64
+    fcLayers:
+      - 64
+      - 64
+      - 32
 
