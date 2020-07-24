@@ -19,7 +19,8 @@ class PlacementModel(LightningModule):
     def __init__(self, 
         learning_rate=config['network']['placement']['lr'], 
         debug=False, 
-        tags=[]):
+        tags=[],
+        **kwargs):
 
         super().__init__()
 
@@ -34,15 +35,57 @@ class PlacementModel(LightningModule):
             tags=['placement-model'] + tags
         )
 
+
+    def log_metric(self, name, metric):
+        self.nep_logger.experiment.log_metric(name, metric)
+
+
+    def validation_epoch_end(self, outputs):
+        scores = torch.cat([x['scores'] for x in outputs])
+        labels = torch.cat([x['labels'] for x in outputs])
+
+        avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
+
+        probs = torch.sigmoid(scores)
+        step_threshold = config['network']['placement']['stepThreshold']
+        preds = probs > step_threshold
+
+        self.log_metric("val_avg_loss", avg_loss)
+        self.log_metric("val_percent_positive", preds.float().mean())
+
+        try:
+            acc = fmetrics.accuracy(preds, labels) 
+        except RuntimeError:
+                acc = 0
+        self.log_metric("val_acc", acc)
+
+        try:
+            fpr, tpr, threshs = fmetrics.roc(scores, labels)
+            auroc = fmetrics.auc(fpr, tpr)
+        except ValueError:
+            auroc = 0.5
+        self.log_metric("val_auroc", auroc)
+
+        precision, recall, threshs = fmetrics.precision_recall_curve(scores, labels)
+        prauc = fmetrics.auc(recall, precision)
+        if torch.isnan(prauc):
+            prauc = 0
+        self.log_metric("val_prauc", prauc)
+
+        return {'val_loss': prauc}
+
+
     def test_epoch_end(self, outputs):
+
+
         plt.rcParams['figure.figsize'] = (12, 12)
 
         # Put test metrics here.
         avg_loss = torch.stack([x['test_loss'] for x in outputs]).mean()
+        self.log_metric("test_avg_loss", avg_loss)
 
         scores = torch.cat([x['scores'] for x in outputs])
-        exact_labels = torch.cat([x['labels'] for x in outputs])
-        fuzzy_labels = torch.cat([x['fuzzy_labels'] for x in outputs])
+        labels = torch.cat([x['labels'] for x in outputs])
 
         # Prediction-only metrics
         probs = F.sigmoid(scores)
@@ -57,42 +100,36 @@ class PlacementModel(LightningModule):
         plt.clf()
 
 
-        label_iters = [
-            (exact_labels, 'exact_'),
-            (fuzzy_labels, 'fuzzy_')
-        ] 
+        acc = fmetrics.accuracy(preds, labels) 
+        self.nep_logger.experiment.log_metric('test_accuracy', acc)
 
-        for labels, label_type in label_iters:
-            acc = fmetrics.accuracy(preds, labels) 
-            self.nep_logger.experiment.log_metric(label_type + 'test_accuracy', acc)
+        fpr, tpr, threshs = fmetrics.roc(scores, labels)
+        auroc = fmetrics.auc(fpr, tpr)
 
-            fpr, tpr, threshs = fmetrics.roc(probs, labels)
-            auroc = fmetrics.auc(fpr, tpr)
+        fig, ax = plt.subplots()
+        ax.set_title("ROC")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.plot(fpr.cpu().numpy(), tpr.cpu().numpy())
 
-            fig, ax = plt.subplots()
-            ax.set_title(label_type + "ROC")
-            ax.set_xlabel("False Positive Rate")
-            ax.set_ylabel("True Positive Rate")
-            ax.plot(fpr.cpu().numpy(), tpr.cpu().numpy())
+        self.nep_logger.experiment.log_metric('test_auroc', auroc)
+        self.nep_logger.experiment.log_image('roc_figure', fig)
 
-            self.nep_logger.experiment.log_metric(label_type + 'test_auroc', auroc)
-            self.nep_logger.experiment.log_image(label_type + 'roc_figure', fig)
+        plt.clf()
 
-            plt.clf()
+        f1score = fmetrics.f1_score(scores, labels)
+        self.nep_logger.experiment.log_metric('test_f1', f1score)
 
-            f1score = fmetrics.f1_score(probs, labels)
-            self.nep_logger.experiment.log_metric(label_type + 'test_f1', f1score)
+        precision, recall, threshs = fmetrics.precision_recall_curve(scores, labels)
+        prauc = fmetrics.auc(recall, precision)
 
-            precision, recall, threshs = fmetrics.precision_recall_curve(probs, labels)
-            prauc = fmetrics.auc(recall, precision)
+        fig, ax = plt.subplots()
+        ax.set_title("PR Curve")
+        ax.set_xlabel("Recall")
+        ax.set_ylabel("Precision")
+        ax.plot(recall.cpu().numpy(), precision.cpu().numpy())
 
-            fig, ax = plt.subplots()
-            ax.set_title(label_type + "PR Curve")
-            ax.set_xlabel("Recall")
-            ax.set_ylabel("Precision")
-            ax.plot(recall.cpu().numpy(), precision.cpu().numpy())
+        self.nep_logger.experiment.log_metric('test_prauc', prauc)
+        self.nep_logger.experiment.log_image('pr_figure', fig)
 
-            self.nep_logger.experiment.log_metric(label_type + 'test_prauc', prauc)
-            self.nep_logger.experiment.log_image(label_type + 'pr_figure', fig)
-
-            plt.clf()
+        plt.clf()

@@ -21,6 +21,7 @@ class ConvPlacementModel(pl.PlacementModel):
         super().__init__(debug=debug, **kwargs)
         self.datapath = datapath
         self.debug = debug
+        self.kwargs = kwargs
 
 
         configA = config['network']['conv']['convA']
@@ -78,10 +79,23 @@ class ConvPlacementModel(pl.PlacementModel):
         loss = F.binary_cross_entropy_with_logits(y_hat, timing_labels)
         log = {
             'train_loss': loss,
-            'y_hat_mean': y_hat.mean(),
-            'y_hat_std':  y_hat.std()
+            'y_hat_mean': y_hat.mean()
         }
         return {'loss': loss, 'log': log}
+
+
+    def validation_step(self, batch, batch_idx):
+        fft_features = batch['fft_features']
+        diff = batch['diff']
+        timing_labels = batch['timing_labels']
+
+        y_hat = self((fft_features, diff)).reshape(-1)
+        loss = F.binary_cross_entropy_with_logits(y_hat, timing_labels)
+        return {
+            'test_loss': loss, 
+            'scores': y_hat, 
+            'labels': timing_labels,
+        }
 
 
     def test_step(self, batch, batch_idx):
@@ -123,16 +137,35 @@ class ConvPlacementModel(pl.PlacementModel):
         return dataloader
 
 
+    def val_dataloader(self):
+        if self.debug:
+            # Intended to have a single song in the file path.
+            if 'val_path' in self.kwargs:
+                dataset = smdataset.SMDataset(self.kwargs['val_path'])
+            else:
+                dataset = smdataset.SMDataset(self.datapath)
+        else:
+            dataset = smdataset.getSMDataset(self.datapath + '/validation') 
+        dataloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=config['network']['placement']['batchSize'],
+            num_workers=4
+        ) 
+        return dataloader
+
+
     def test_dataloader(self):
         if self.debug:
             # Intended to have a single song in the file path.
-            dataset = smdataset.SMDataset(self.datapath)
+            if 'test_path' in self.kwargs:
+                dataset = smdataset.SMDataset(self.kwargs['test_path'])
+            else:
+                dataset = smdataset.SMDataset(self.datapath)
         else:
             dataset = smdataset.getSMDataset(self.datapath + '/test') 
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=config['network']['placement']['batchSize'],
-            shuffle=True,
             num_workers=4
         ) 
 

@@ -70,7 +70,7 @@ class SMDataset(tdata.Dataset):
         fuzzy_timing_labels = (
             self.note_labels[diff_idx, frame_idx-1:frame_idx+1, :]
                 .sum().clamp_max(1)
-        )
+        ) * timing_labels
         
         res = {
             'fft_features': self.mel_data[:, :, start_frame:end_frame],

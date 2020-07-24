@@ -28,8 +28,8 @@ network:
       - 20
   placement:
     lr: 0.01
-    batchSize: 128
-    stepThreshold: 0.1
+    batchSize: 256
+    stepThreshold: 0.5
     fcLayers:
       - 64
       - 32
